@@ -1,0 +1,278 @@
+# src/texas_holdem/strategy.py
+from __future__ import annotations
+
+from dataclasses import dataclass
+import math
+
+
+# ------------------------------------------------------------
+# CALL: podatki, ki jih potrebujemo za izračun EV pri call-u
+# ------------------------------------------------------------
+@dataclass
+class CallDecision:
+    # Vhodni podatki za ocenjevanje EV "CALL" v primerjavi s "FOLD".
+    #
+    # Predpostavke:
+    # - Odločitev je enkratna (npr. river ali situacija, kjer po call-u ni več stavljanja).
+    # - Če hero calla, gremo direktno do showdown-a (brez nadaljnjih stav).
+    #
+    # Pojasnila atributov:
+    # pot:
+    #   Trenutni pot P pred našo odločitvijo (vključuje že villainovo stavo).
+    # to_call:
+    #   Koliko moramo doplačati za call (C).
+    # win_prob:
+    #   Verjetnost, da zmagamo, če callamo in pridemo do showdown-a.
+    # tie_prob:
+    #   Verjetnost, da je split (delitev pota).
+    # risk_factor:
+    #   0 = risk-nevtralen (linearen EV v žetonih),
+    #   >0 = bolj previden (konkavna uporabnost),
+    #   <0 = iskalec tveganja (konveksna uporabnost).
+    pot: float
+    to_call: float
+    win_prob: float
+    tie_prob: float = 0.0
+    risk_factor: float = 0.0
+
+    def lose_prob(self) -> float:
+        # Izračunana verjetnost poraza (1 - win - tie), z varnostnim "clamp"
+        lp = 1.0 - self.win_prob - self.tie_prob
+        return max(0.0, min(1.0, lp))
+
+
+# ------------------------------------------------------------
+# RAISE/BET: podatki, ki jih potrebujemo za izračun EV pri stavi/raisu
+# ------------------------------------------------------------
+@dataclass
+class RaiseDecision:
+    # Vhodni podatki za ocenjevanje EV "BET/RAISE".
+    #
+    # Predpostavke:
+    # - Trenutni pot je P (pred našo stavo).
+    # - Mi stavimo/raisamo B (nova investicija z naše strani).
+    # - Nasprotnik foldda s pf, sicer calla.
+    # - Če nasprotnik calla, imamo win_prob_call / tie_prob_call proti njegovemu calling range-u.
+    # - Po call-u ni nadaljnjih stav (showdown).
+    #
+    # pot:
+    #   Trenutni pot P pred našim raise/bet.
+    # bet_size:
+    #   Naša stava/raise B.
+    # fold_prob:
+    #   Verjetnost, da villain foldda na naš bet/raise (pf).
+    # win_prob_call / tie_prob_call:
+    #   Verjetnosti izida pod pogojem, da villain calla.
+    # risk_factor:
+    #   Stil tveganja (enako kot pri call-u).
+    pot: float
+    bet_size: float
+    fold_prob: float
+    win_prob_call: float
+    tie_prob_call: float = 0.0
+    risk_factor: float = 0.0
+
+    def lose_prob_call(self) -> float:
+        # Izračunana verjetnost poraza ob call-u (1 - win - tie), z "clamp"
+        lp = 1.0 - self.win_prob_call - self.tie_prob_call
+        return max(0.0, min(1.0, lp))
+
+
+# ------------------------------------------------------------
+# Utility funkcija: pretvorba "žetoni -> uporabnost" glede na stil tveganja
+# ------------------------------------------------------------
+def utility(delta_chips: float, risk_style: float) -> float:
+    # Simetrična funkcija uporabnosti:
+    # - risk_style > 0: previden (konkavna)
+    # - risk_style = 0: nevtralen (linearna)
+    # - risk_style < 0: iskalec tveganja (konveksna)
+    x = delta_chips
+
+    # Risk-nevtralno: uporabnost = žetoni
+    if abs(risk_style) < 1e-9:
+        return x
+
+    magnitude = abs(x)
+
+    if risk_style > 0:
+        # Previden: eksponent v (0, 1); večji risk_style -> bolj konkavno (bolj "cautious")
+        exponent = 1.0 / (1.0 + risk_style)
+    else:
+        # Iskalec tveganja: eksponent > 1; npr. risk_style=-2 -> exponent=3
+        exponent = 1.0 - risk_style
+
+    # +1 in -1 sta zato, da je utility(0)=0 in da ni težav pri 0
+    curved = (magnitude + 1.0) ** exponent - 1.0
+
+    # Ohranimo predznak (dobiček pozitiven, izguba negativna)
+    return math.copysign(curved, x)
+
+
+# ------------------------------------------------------------
+# EV za CALL (v žetonih)
+# ------------------------------------------------------------
+def ev_call_chips(decision: CallDecision) -> float:
+    # EV (risk-nevtralen) relativno na FOLD = 0.
+    #
+    # Izidi (relativno na folding):
+    # - win:  +P
+    # - tie:  +0.5*P - 0.5*C
+    # - lose: -C
+    P = decision.pot
+    C = decision.to_call
+    p_win = decision.win_prob
+    p_tie = decision.tie_prob
+    p_lose = decision.lose_prob()
+
+    return (
+        p_win * P
+        + p_tie * (0.5 * P - 0.5 * C)
+        - p_lose * C
+    )
+
+
+# ------------------------------------------------------------
+# EV za CALL (v uporabnosti - upošteva risk_factor)
+# ------------------------------------------------------------
+def ev_call_utility(decision: CallDecision) -> float:
+    # Pričakovana uporabnost (EU) za CALL.
+    # Enaki izidi kot pri ev_call_chips, samo da gredo skozi utility().
+    P = decision.pot
+    C = decision.to_call
+    p_win = decision.win_prob
+    p_tie = decision.tie_prob
+    p_lose = decision.lose_prob()
+    r = decision.risk_factor
+
+    delta_win = P
+    delta_tie = 0.5 * P - 0.5 * C
+    delta_lose = -C
+
+    u_win = utility(delta_win, r)
+    u_tie = utility(delta_tie, r)
+    u_lose = utility(delta_lose, r)
+
+    return (
+        p_win * u_win
+        + p_tie * u_tie
+        + p_lose * u_lose
+    )
+
+
+# ------------------------------------------------------------
+# EV za RAISE/BET (v žetonih)
+# ------------------------------------------------------------
+def ev_raise_chips(decision: RaiseDecision) -> float:
+    # EV (risk-nevtralen) relativno na check/fold baseline = 0.
+    #
+    # Izidi (relativno na check/fold):
+    # - villain folds:           +P
+    # - villain calls & win:     +P + B
+    # - villain calls & tie:     +0.5*P
+    # - villain calls & lose:    -B
+    P = decision.pot
+    B = decision.bet_size
+    pf = decision.fold_prob
+
+    p_win = decision.win_prob_call
+    p_tie = decision.tie_prob_call
+    p_lose = decision.lose_prob_call()
+
+    ev_if_called = (
+        p_win * (P + B)
+        + p_tie * (0.5 * P)
+        - p_lose * B
+    )
+
+    return pf * P + (1.0 - pf) * ev_if_called
+
+
+# ------------------------------------------------------------
+# EV za RAISE/BET (v uporabnosti - upošteva risk_factor)
+# ------------------------------------------------------------
+def ev_raise_utility(decision: RaiseDecision) -> float:
+    # Pričakovana uporabnost (EU) za bet/raise.
+    P = decision.pot
+    B = decision.bet_size
+    pf = decision.fold_prob
+    r = decision.risk_factor
+
+    p_win = decision.win_prob_call
+    p_tie = decision.tie_prob_call
+    p_lose = decision.lose_prob_call()
+
+    # Če villain foldda: dobimo +P
+    u_fold = utility(P, r)
+
+    # Če villain calla:
+    u_win_call = utility(P + B, r)
+    u_tie_call = utility(0.5 * P, r)
+    u_lose_call = utility(-B, r)
+
+    eu_if_called = (
+        p_win * u_win_call
+        + p_tie * u_tie_call
+        + p_lose * u_lose_call
+    )
+
+    return pf * u_fold + (1.0 - pf) * eu_if_called
+
+
+# ------------------------------------------------------------
+# Priporočilo: CALL vs FOLD (na podlagi EU_call)
+# ------------------------------------------------------------
+def recommend_action(decision: CallDecision) -> str:
+    # Če je EU(call) > 0: call je (v tem modelu) boljši od fold
+    # Če je EU(call) < 0: fold je boljši
+    eu_call = ev_call_utility(decision)
+    eps = 1e-6
+
+    if eu_call > eps:
+        return f"CALL (EU = {eu_call:.3f})"
+    elif eu_call < -eps:
+        return f"FOLD (EU = {eu_call:.3f})"
+    else:
+        return f"CLOSE DECISION (EU ≈ {eu_call:.3f})"
+
+
+# ------------------------------------------------------------
+# Priporočilo: RAISE/BET vs NO RAISE (na podlagi EU_raise)
+# ------------------------------------------------------------
+def recommend_raise_action(decision: RaiseDecision) -> str:
+    # Če je EU(raise) > 0: raise je boljši kot check/fold baseline
+    # Če je EU(raise) < 0: raje ne raisamo (check/fold baseline boljši)
+    eu_rais = ev_raise_utility(decision)
+    eps = 1e-6
+
+    if eu_rais > eps:
+        return f"RAISE/BET (EU = {eu_rais:.3f})"
+    elif eu_rais < -eps:
+        return f"NO RAISE (EU = {eu_rais:.3f})"
+    else:
+        return f"CLOSE DECISION (EU ≈ {eu_rais:.3f})"
+
+
+# ------------------------------------------------------------
+# Hiter test (če poganjamo datoteko direktno)
+# ------------------------------------------------------------
+if __name__ == "__main__":
+    # Mini sanity check za CALL (risk-nevtralen)
+    d = CallDecision(pot=100.0, to_call=50.0, win_prob=0.40, tie_prob=0.05, risk_factor=0.0)
+    print("Risk-neutral EV(call):", ev_call_chips(d))
+    print("Risk-neutral EU(call):", ev_call_utility(d), "->", recommend_action(d))
+
+    # Mini sanity check za CALL (previden igralec)
+    d_risk_averse = CallDecision(pot=100.0, to_call=50.0, win_prob=0.40, tie_prob=0.05, risk_factor=2.0)
+    print("Risk-averse EU(call):", ev_call_utility(d_risk_averse), "->", recommend_action(d_risk_averse))
+
+    # Mini sanity check za RAISE (risk-nevtralen)
+    rd = RaiseDecision(
+        pot=100.0,
+        bet_size=50.0,
+        fold_prob=0.3,
+        win_prob_call=0.45,
+        tie_prob_call=0.05,
+        risk_factor=0.0,
+    )
+    print("Risk-neutral EV(raise):", ev_raise_chips(rd))
+    print("Risk-neutral EU(raise):", ev_raise_utility(rd), "->", recommend_raise_action(rd))
