@@ -72,6 +72,8 @@ class RaiseDecision:
     tie_prob_call: float = 0.0
     risk_factor: float = 0.0
 
+    expected_callers_when_called: float = 1.0
+
     def lose_prob_call(self) -> float:
         # Izračunana verjetnost poraza ob call-u (1 - win - tie), z "clamp"
         lp = 1.0 - self.win_prob_call - self.tie_prob_call
@@ -172,19 +174,24 @@ def ev_raise_chips(decision: RaiseDecision) -> float:
     # - villain calls & lose:    -B
     P = decision.pot
     B = decision.bet_size
-    pf = decision.fold_prob
+    pf_all = decision.fold_prob
+    k = max(1.0, decision.expected_callers_when_called)
 
     p_win = decision.win_prob_call
     p_tie = decision.tie_prob_call
     p_lose = decision.lose_prob_call()
 
+    delta_win = P + k * B
+    delta_tie = 0.5 * P + 0.5 * (k - 1.0) * B
+    delta_lose = -B
+
     ev_if_called = (
-        p_win * (P + B)
-        + p_tie * (0.5 * P)
-        - p_lose * B
+        p_win * delta_win
+        + p_tie * delta_tie
+        + p_lose * delta_lose
     )
 
-    return pf * P + (1.0 - pf) * ev_if_called
+    return pf_all * P + (1.0 - pf_all) * ev_if_called
 
 
 # ------------------------------------------------------------
@@ -194,8 +201,9 @@ def ev_raise_utility(decision: RaiseDecision) -> float:
     # Pričakovana uporabnost (EU) za bet/raise.
     P = decision.pot
     B = decision.bet_size
-    pf = decision.fold_prob
+    pf_all = decision.fold_prob
     r = decision.risk_factor
+    k = max(1.0, decision.expected_callers_when_called)
 
     p_win = decision.win_prob_call
     p_tie = decision.tie_prob_call
@@ -205,9 +213,13 @@ def ev_raise_utility(decision: RaiseDecision) -> float:
     u_fold = utility(P, r)
 
     # Če villain calla:
-    u_win_call = utility(P + B, r)
-    u_tie_call = utility(0.5 * P, r)
-    u_lose_call = utility(-B, r)
+    delta_win = P + k * B
+    delta_tie = 0.5 * P + 0.5 * (k - 1.0) * B
+    delta_lose = -B
+
+    u_win_call = utility(delta_win, r)
+    u_tie_call = utility(delta_tie, r)
+    u_lose_call = utility(delta_lose, r)
 
     eu_if_called = (
         p_win * u_win_call
@@ -215,7 +227,7 @@ def ev_raise_utility(decision: RaiseDecision) -> float:
         + p_lose * u_lose_call
     )
 
-    return pf * u_fold + (1.0 - pf) * eu_if_called
+    return pf_all * u_fold + (1.0 - pf_all) * eu_if_called
 
 
 # ------------------------------------------------------------

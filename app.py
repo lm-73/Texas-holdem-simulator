@@ -141,10 +141,23 @@ bet_size = st.sidebar.number_input(
     value=50.0,
     step=5.0
 )
-fold_prob = st.sidebar.slider(
-    "Verjetnost, da nasprotnik folda na vašo stavo",
+pf_one = st.sidebar.slider(
+    "Verjetnost, da posamezen nasprotnik foldda na vašo stavo",
     0.0, 1.0, 0.3, 0.05
 )
+
+pf_all = pf_one ** num_opponents
+
+p_call_one = 1.0 - pf_one
+p_called = 1.0 - pf_all  
+if p_called < 1e-12:
+    expected_callers_when_called = 1.0  
+else:
+    expected_callers_when_called = (num_opponents * p_call_one) / p_called
+
+st.sidebar.caption(f"pf_all (da vsi folddajo) = {pf_all:.3f}")
+st.sidebar.caption(f"E[callerjev | nekdo calla] ≈ {expected_callers_when_called:.2f}")
+
 
 # Faktor tveganja (risk preference) za expected utility (EU)
 risk_style = st.sidebar.slider(
@@ -264,13 +277,15 @@ else:
     # fold_prob = verjetnost, da vsi folddajo (takoj dobimo pot)
     # win_prob_call/tie_prob_call = poenostavitev: ob call-u predpostavimo enako equity kot prej
     raise_decision = RaiseDecision(
-        pot=pot,
-        bet_size=bet_size,
-        fold_prob=fold_prob,
-        win_prob_call=win_prob,
-        tie_prob_call=tie_prob,
-        risk_factor=risk_style,
-    )
+    pot=pot,
+    bet_size=bet_size,
+    fold_prob=pf_all,  
+    win_prob_call=win_prob,
+    tie_prob_call=tie_prob,
+    risk_factor=risk_style,
+    expected_callers_when_called=expected_callers_when_called,  
+)
+
 
     # 1) FOLD (osnovna referenca: nič ne dobimo, nič ne izgubimo v tem modelu)
     ev_fold_chips = 0.0
