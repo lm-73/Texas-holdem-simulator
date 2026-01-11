@@ -142,7 +142,7 @@ bet_size = st.sidebar.number_input(
     step=5.0
 )
 fold_prob = st.sidebar.slider(
-    "Verjetnost, da vsi folddajo na vašo stavo",
+    "Verjetnost, da nasprotnik folda na vašo stavo",
     0.0, 1.0, 0.3, 0.05
 )
 
