@@ -120,7 +120,7 @@ num_opponents = st.sidebar.slider("Število nasprotnikov", 1, 9, 1)
 
 # Pot in znesek za call (v žetonih)
 pot = st.sidebar.number_input(
-    "Trenutni pot (pred odločitvijo)",
+    "Trenutni pot (vključno z nasprotnikovo stavo)",
     min_value=0.0,
     value=100.0,
     step=10.0
