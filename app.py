@@ -164,7 +164,7 @@ st.sidebar.caption(f"E[callerjev | nekdo calla] ≈ {expected_callers_when_calle
 
 # Faktor tveganja (risk preference) za expected utility (EU)
 risk_style = st.sidebar.slider(
-    "Stil tveganja (-5 = iskalec tveganja, 0 = nevtralen, 5 = zelo previden)",
+    "Stil tveganja (-5 = zelo previden, 0 = nevtralen, 5 = iskalec tveganja)",
     min_value=-5.0,
     max_value=5.0,
     value=0.0,

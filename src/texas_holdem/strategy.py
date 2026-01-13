@@ -85,30 +85,27 @@ class RaiseDecision:
 # Utility funkcija: pretvorba "žetoni -> uporabnost" glede na stil tveganja
 # ------------------------------------------------------------
 def utility(delta_chips: float, risk_style: float) -> float:
-    # Simetrična funkcija uporabnosti:
-    # - risk_style > 0: previden (konkavna)
-    # - risk_style = 0: nevtralen (linearna)
-    # - risk_style < 0: iskalec tveganja (konveksna)
     x = delta_chips
 
-    # Risk-nevtralno: uporabnost = žetoni
-    if abs(risk_style) < 1e-9:
+    # malo ublažimo vpliv sliderja (0.2 = 5× šibkejši vpliv)
+    r_eff = risk_style * 0.2
+
+    # risk-nevtralno, če je zelo blizu 0
+    if abs(r_eff) < 1e-9:
         return x
 
     magnitude = abs(x)
 
-    if risk_style > 0:
-        # Previden: eksponent v (0, 1); večji risk_style -> bolj konkavno (bolj "cautious")
-        exponent = 1.0 / (1.0 + risk_style)
+    if r_eff > 0:
+        # Previden: konkavna funkcija, eksponent med (0.5, 1)
+        exponent = 1.0 / (1.0 + r_eff)
     else:
-        # Iskalec tveganja: eksponent > 1; npr. risk_style=-2 -> exponent=3
-        exponent = 1.0 - risk_style
+        # Iskalec tveganja: konveksna, eksponent med (1, 2)
+        exponent = 1.0 - r_eff
 
-    # +1 in -1 sta zato, da je utility(0)=0 in da ni težav pri 0
     curved = (magnitude + 1.0) ** exponent - 1.0
-
-    # Ohranimo predznak (dobiček pozitiven, izguba negativna)
     return math.copysign(curved, x)
+
 
 
 # ------------------------------------------------------------
