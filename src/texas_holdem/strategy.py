@@ -84,27 +84,43 @@ class RaiseDecision:
 # ------------------------------------------------------------
 # Utility funkcija: pretvorba "žetoni -> uporabnost" glede na stil tveganja
 # ------------------------------------------------------------
-def utility(delta_chips: float, risk_style: float) -> float:
-    x = delta_chips
+def utility(
+    delta_chips: float,
+    risk_style: float,
+    *,
+    chip_scale: float = 100.0,   
+    slider_scale: float = 0.1,  
+) -> float:
 
-    # malo ublažimo vpliv sliderja (0.2 = 5× šibkejši vpliv)
-    r_eff = risk_style * 0.2
+    x = float(delta_chips)
+    if x == 0.0:
+        return 0.0
 
-    # risk-nevtralno, če je zelo blizu 0
-    if abs(r_eff) < 1e-9:
+    r = float(risk_style) * slider_scale
+
+    if abs(r) < 1e-12:
         return x
 
-    magnitude = abs(x)
+    k = abs(r)  
 
-    if r_eff > 0:
-        # Previden: konkavna funkcija, eksponent med (0.5, 1)
-        exponent = 1.0 / (1.0 + r_eff)
-    else:
-        # Iskalec tveganja: konveksna, eksponent med (1, 2)
-        exponent = 1.0 - r_eff
+    if r > 0:  
+        a_gain = 1.0 + k
+        a_loss = 1.0 / (1.0 + k)
+    else:      
+        a_gain = 1.0 / (1.0 + k)
+        a_loss = 1.0 + k
 
-    curved = (magnitude + 1.0) ** exponent - 1.0
-    return math.copysign(curved, x)
+    a = a_gain if x > 0 else a_loss
+
+    C = max(float(chip_scale), 1e-9)
+
+    s = abs(x) / C
+    s = min(s, 1e12) 
+
+    u = C * ((s + 1.0) ** a - 1.0) / a
+
+    return math.copysign(u, x)
+
 
 
 
@@ -148,9 +164,11 @@ def ev_call_utility(decision: CallDecision) -> float:
     delta_tie = 0.5 * P - 0.5 * C
     delta_lose = -C
 
-    u_win = utility(delta_win, r)
-    u_tie = utility(delta_tie, r)
-    u_lose = utility(delta_lose, r)
+    cs = max(1.0, C)
+
+    u_win = utility(delta_win, r, chip_scale=cs)
+    u_tie = utility(delta_tie, r, chip_scale=cs)
+    u_lose = utility(delta_lose, r, chip_scale=cs)
 
     return (
         p_win * u_win
@@ -209,17 +227,19 @@ def ev_raise_utility(decision: RaiseDecision) -> float:
     p_tie = decision.tie_prob_call
     p_lose = decision.lose_prob_call()
 
+    cs = max(1.0, C + B)
+
     # Če villain foldda: dobimo +P
-    u_fold = utility(P, r)
+    u_fold = utility(P, r, chip_scale=cs)
 
     # Če villain calla:
     delta_win = P + k * B
     delta_tie = 0.5 * P + 0.5 * (k - 1.0) * B - 0.5 * C
     delta_lose = -B - C
 
-    u_win_call = utility(delta_win, r)
-    u_tie_call = utility(delta_tie, r)
-    u_lose_call = utility(delta_lose, r)
+    u_win_call = utility(delta_win, r, chip_scale=cs)
+    u_tie_call = utility(delta_tie, r, chip_scale=cs)
+    u_lose_call = utility(delta_lose, r, chip_scale=cs)
 
     eu_if_called = (
         p_win * u_win_call
