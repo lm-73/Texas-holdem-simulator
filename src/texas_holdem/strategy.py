@@ -66,6 +66,7 @@ class RaiseDecision:
     # risk_factor:
     #   Stil tveganja (enako kot pri call-u).
     pot: float
+    to_call: float
     bet_size: float
     fold_prob: float
     win_prob_call: float
@@ -173,6 +174,7 @@ def ev_raise_chips(decision: RaiseDecision) -> float:
     # - villain calls & tie:     +0.5*P
     # - villain calls & lose:    -B
     P = decision.pot
+    C = decision.to_call
     B = decision.bet_size
     pf_all = decision.fold_prob
     k = max(1.0, decision.expected_callers_when_called)
@@ -182,8 +184,8 @@ def ev_raise_chips(decision: RaiseDecision) -> float:
     p_lose = decision.lose_prob_call()
 
     delta_win = P + k * B
-    delta_tie = 0.5 * P + 0.5 * (k - 1.0) * B
-    delta_lose = -B
+    delta_tie = 0.5 * P + 0.5 * (k - 1.0) * B - 0.5 * C
+    delta_lose = -B -C
 
     ev_if_called = (
         p_win * delta_win
@@ -200,6 +202,7 @@ def ev_raise_chips(decision: RaiseDecision) -> float:
 def ev_raise_utility(decision: RaiseDecision) -> float:
     # Pričakovana uporabnost (EU) za bet/raise.
     P = decision.pot
+    C = decision.to_call
     B = decision.bet_size
     pf_all = decision.fold_prob
     r = decision.risk_factor
@@ -214,8 +217,8 @@ def ev_raise_utility(decision: RaiseDecision) -> float:
 
     # Če villain calla:
     delta_win = P + k * B
-    delta_tie = 0.5 * P + 0.5 * (k - 1.0) * B
-    delta_lose = -B
+    delta_tie = 0.5 * P + 0.5 * (k - 1.0) * B - 0.5 * C
+    delta_lose = -B - C
 
     u_win_call = utility(delta_win, r)
     u_tie_call = utility(delta_tie, r)
@@ -279,12 +282,13 @@ if __name__ == "__main__":
 
     # Mini sanity check za RAISE (risk-nevtralen)
     rd = RaiseDecision(
-        pot=100.0,
-        bet_size=50.0,
-        fold_prob=0.3,
-        win_prob_call=0.45,
-        tie_prob_call=0.05,
-        risk_factor=0.0,
+    pot=100.0,
+    to_call=20.0,      
+    bet_size=50.0,
+    fold_prob=0.3,
+    win_prob_call=0.45,
+    tie_prob_call=0.05,
+    risk_factor=0.0,
     )
     print("Risk-neutral EV(raise):", ev_raise_chips(rd))
     print("Risk-neutral EU(raise):", ev_raise_utility(rd), "->", recommend_raise_action(rd))

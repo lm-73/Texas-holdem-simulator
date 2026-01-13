@@ -135,12 +135,15 @@ to_call = st.sidebar.number_input(
 # Parametri za raise:
 # - bet_size: koliko stavimo/raisamo
 # - fold_prob: verjetnost, da vsi folddajo na naš raise (poenostavljen model)
-bet_size = st.sidebar.number_input(
-    "Velikost vaše stave / raisa",
+raise_extra = st.sidebar.number_input(
+    "Raise extra (dodatno čez call)",
     min_value=0.0,
     value=50.0,
     step=5.0
 )
+
+st.sidebar.caption(f"Skupaj vložiš ob raise: C + B = {to_call + raise_extra:.1f}")
+
 pf_one = st.sidebar.slider(
     "Verjetnost, da posamezen nasprotnik foldda na vašo stavo",
     0.0, 1.0, 0.3, 0.05
@@ -278,12 +281,13 @@ else:
     # win_prob_call/tie_prob_call = poenostavitev: ob call-u predpostavimo enako equity kot prej
     raise_decision = RaiseDecision(
     pot=pot,
-    bet_size=bet_size,
-    fold_prob=pf_all,  
+    to_call=to_call,                  
+    bet_size=raise_extra,             # <-- B je raise-extra
+    fold_prob=pf_all,
     win_prob_call=win_prob,
     tie_prob_call=tie_prob,
     risk_factor=risk_style,
-    expected_callers_when_called=expected_callers_when_called,  
+    expected_callers_when_called=expected_callers_when_called,
 )
 
 
